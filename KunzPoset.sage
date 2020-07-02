@@ -1,8 +1,54 @@
 from sage.combinat.posets.posets import FinitePoset
+import re
+import pprint
 
 class KunzPoset:
+    """
+        A class used to represent a KunzPoset object.
+
+        ----------
+        Attributes
+        ----------
+
+        m : int
+            The multiplicity of our KunzPoset
+        cover_relations : List of Tuples
+            The cover relations of our KunzPoset
+        hyperplane_desc : List of Lists
+            The inequalities that describe our KunzPoset
+        poset : FinitePoset
+            Visual representation of our KunzPoset
+        atoms : List
+            List of the bottom-most elements of our KunzPoset (excluding 0)
+
+        -------------------
+        Optional Attributes
+        -------------------
+
+        apery_set : List
+            The apery_set of a Numerical Semigroup
+        kunz_coords : List
+            The Kunz Coordinates of a Numerical Semigroup
+
+        *The Following Require NumericalSemigroup.sage*
+        Download at https://github.com/coneill-math/numsgps-sage
+
+        S : NumericalSemigroup
+            The Numerical Semigroup whose Apery
+        semigroup_gens : List
+            The minimal generators of the Numerical Semigroup whose Apery Poset
+            is our KunzPoset
+    """
+
     def __init__(self, m, cover_relations = None, hyperplane_desc = None, \
-            semigroup_gens = None, face_desc = None, hplane_list = None):
+            semigroup_gens = None, numerical_semigroup = None, apery_set = None, \
+            kunz_coordinates = None):
+        """
+        ----------
+        Parameters
+        ----------
+        """
+
         # Set the multiplicity for our KunzPoset
         self.m = m
 
@@ -11,54 +57,74 @@ class KunzPoset:
         if (cover_relations is not None):
             self.cover_relations = [(i,j) for (i,j,k) in \
                     DiGraph(cover_relations).transitive_reduction().edges()]
-            self.hyperplane_desc = self._generate_h_desc()
+            self.hyperplane_desc = self.__generate_h_desc()
 
         # Hyperplane description will be a list of lists
         elif (hyperplane_desc is not None):
             self.hyperplane_desc = hyperplane_desc
-            self.cover_relations = self._generate_cover_relations()
+            self.cover_relations = self.__generate_cover_relations()
 
         # This should just be a list or a tuple
         elif (semigroup_gens is not None):
             self.semigroup_gens = semigroup_gens
-            self.cover_relations = self._generate_cover_relations()
-            self.hyperplane_desc = self._generate_h_desc()
+            self.cover_relations = self.__generate_cover_relations()
+            self.hyperplane_desc = self.__generate_h_desc()
 
-        ##### EXPERIMENTAL #####
-        elif (face_desc is not None and hplane_list is not None):
-            self.face_desc = face_desc
-            self.hplane_list = hplane_list
+        elif (numerical_semigroup is not None):
+            self.S = numerical_semigroup
+            self.semigroup_gens = self.S.gens
+            self.cover_relations = self.__generate_cover_relations()
+            self.hyperplane_desc = self.__generate_h_desc()
 
-            self.hyperplane_desc = []
-            for index, equality in enumerate(self.face_desc):
-                if(int(equality)):
-                    self.hyperplane_desc.append(self.hplane_list[index])
-            self.cover_relations = self._generate_cover_relations()
+        elif (apery_set is not None):
+            self.apery_set = apery_set
+            self.cover_relations = self.__generate_cover_relations()
+            self.hyperplane_desc = self.__generate_h_desc()
+
+        elif (kunz_coords is not None):
+            self.kunz_coords = kunz_coords
+            self.cover_relations = self.__generate_cover_relations()
+            self.hyperplane_desc = self.__generate_h_desc()
 
         else:
-            print("You did not pass in any data!")
-            print("You can pass cover relations,")
-            print("A hyperplane description,")
-            print("or semigroup generators (Requires semigroup package)")
+            raise ValueError('You did not pass data for the KunzPoset.')
 
         # Make the poset
-        self.poset = self._generate_poset()
+        self.poset = self.__generate_poset()
 
         # atoms of the poset
         self.atoms = [j for (i,j) in self.cover_relations if (i == 0)]
 
     # When someone puts object in a print statement
     def __repr__(self):
-        return "This is a KunzPoset!!"
+        return "KunzPoset with multiplicity %d." % self.m
 
-    def _generate_cover_relations(self):
+    def __generate_cover_relations(self):
+        if (hasattr(self, "kunz_coords")):
+            self.apery_set = [self.m * coord + i \
+                for i, coord in enumerate(kunz_coords)]
+
+        # Means we are calling from apery_set if statement
+        if (hasattr(self, "apery_set")):
+            apery_set = copy(self.apery_set)
+            apery_set.sort(reverse=True)
+            apery_set.pop()
+            sums = [a_i + a_j for a_i in apery_set for a_j in apery_set]
+            atoms = set(apery_set) - (set(sums) & set(apery_set))
+            covers = [(a_i % self.m, a_j % self.m) for a_i in apery_set \
+                for a_j in apery_set if a_j - a_i in atoms]
+            covers += [(0, a % self.m) for a in atoms]
+            return [(i,j) for (i,j,k) in \
+                    DiGraph(covers).transitive_reduction().edges()]
+
         # Means we are calling from semigroup_gens if statement
-        if (not hasattr(self, "hyperplane_desc")):
-            try:
-                self.S = NumericalSemigroup(self.semigroup_gens)
-            except:
-                print("You need NumericalSemigroup package")
-                return
+        elif (not hasattr(self, "hyperplane_desc")):
+            if (not hasattr(self, "S")):
+                try:
+                    self.S = NumericalSemigroup(self.semigroup_gens)
+                except:
+                    print("You need NumericalSemigroup package")
+                    return
 
             apery_set = self.S.AperySet(self.m)
             covers = []
@@ -98,7 +164,7 @@ class KunzPoset:
 
     # Generate the hyperplane description
     # Assuming cover relations have already been computed
-    def _generate_h_desc(self):
+    def __generate_h_desc(self):
         relations = copy(self.cover_relations)
         full_relations = []
         seen_relations = []
@@ -129,15 +195,15 @@ class KunzPoset:
             return h_desc
 
     # generating the poset
-    def _generate_poset(self):
+    def __generate_poset(self):
         return FinitePoset(DiGraph(self.cover_relations).transitive_reduction())
 
-    def face(self):
-        if (not hasattr(self, "face")):
-            self.face = Polyhedron(self.hyperplane_desc)
-        return self.face
+    def Face(self):
+        if (not hasattr(self, "__face")):
+            self.__face = Polyhedron(self.hyperplane_desc)
+        return self.__face
 
-    def _make_factorizations(self, VERBOSE = False):
+    def __make_factorizations(self, VERBOSE = False):
         # Need minimal gens and order in which to check elements
         minimal_elements = self.atoms
         order = self.poset.linear_extension()
@@ -168,33 +234,33 @@ class KunzPoset:
                         if (temp not in factorizations[element]):
                             factorizations[element].append(temp)
 
-        self._factorizations = factorizations
+        self.__factorizations = factorizations
 
-    def factorization(self, element = None):
-        if (not hasattr(self, "_factorizations")):
-            self._make_factorizations()
-        return self._factorizations[element] if element is not None else \
-                self._factorizations
+    def Factorization(self, element = None):
+        if (not hasattr(self, "__factorizations")):
+            self.__make_factorizations()
+        return self.__factorizations[element] if element is not None else \
+                self.__factorizations
 
     # Function needed for find_num_bettis_graph
-    def _generate_bin(self, num_list):
+    def __generate_bin(self, num_list):
         return '0b' + ''.join(['1' if num > 0 else '0' for num in num_list])
 
-    def _find_num_bettis_graph(self, VERBOSE = False):
+    def __find_num_bettis_graph(self, VERBOSE = False):
 
         bettis = {}
 
-        for element, factorization in self._factorizations.items():
+        for element, factorization in self.__factorizations.items():
             # Only go through process if more than one factorization exists
             # for an element of the poset
             if (len(factorization) > 1):
                 # initialize both representations
-                binary_rep = [self._generate_bin(factorization[0])]
+                binary_rep = [self.__generate_bin(factorization[0])]
                 real_rep = [[factorization[0]]]
 
                 # Test each new relation against others
                 for rel in factorization[1:]:
-                    binary_rel = self._generate_bin(rel)
+                    binary_rel = self.__generate_bin(rel)
                     groups_added_to = []
                     i = 0
 
@@ -244,38 +310,67 @@ class KunzPoset:
                         relation = list(map(operator.sub, real_rep[0][0], rep[0]))
                         bettis[element].append(relation)
 
-        self._bettis = bettis
-        self._make_relation_matrix()
+        self.__bettis = bettis
+        self.__make_relation_matrix()
 
-    def betti(self, element = None):
-        if (not hasattr(self, '_factorizations')):
-            self._make_factorizations()
-        if (not hasattr(self, '_bettis')):
-            self._find_num_bettis_graph()
+    def BettiElements(self):
+        if (not hasattr(self, '__factorizations')):
+            self.__make_factorizations()
+        if (not hasattr(self, '__bettis')):
+            self.__find_num_bettis_graph()
+        return self.__bettis
 
-        return self._bettis[element] if element is not None else \
-                self._bettis
+    def BettiMatrix(self):
+        if (not hasattr(self, '__factorizations')):
+            self.__make_factorizations()
+        if (not hasattr(self, '__bettis')):
+            self.__find_num_bettis_graph()
 
-    def betti_matrix(self):
-        if (not hasattr(self, '_factorizations')):
-            self._make_factorizations()
-        if (not hasattr(self, '_bettis')):
-            self._find_num_bettis_graph()
+        return self.__betti_matrix
 
-        return self._betti_matrix
-
-    def _make_relation_matrix(self):
+    def __make_relation_matrix(self):
         betti_matrix = []
-        for betti in self._bettis:
-            for relations in self._bettis[betti]:
+        for betti in self.__bettis:
+            for relations in self.__bettis[betti]:
                 betti_matrix.append([rel for rel in relations])
 
-        self._betti_matrix = matrix(betti_matrix)
+        self.__betti_matrix = matrix(betti_matrix)
 
-    def dimension(self):
-        if (not hasattr(self, '_factorizations')):
-            self._make_factorizations()
-        if (not hasattr(self, '_bettis')):
-            self._find_num_bettis_graph()
+    def Dimension(self):
+        if (not hasattr(self, '__factorizations')):
+            self.__make_factorizations()
+        if (not hasattr(self, '__bettis')):
+            self.__find_num_bettis_graph()
 
-        return len(self.atoms) - self._betti_matrix.rank()
+        return len(self.atoms) - self.__betti_matrix.rank()
+
+    '''
+        This static method expects there to be a data.out file in the same
+        directory called 'data.out'. You can change the file_path parameter
+        to change the location of this file. This file contains the list of
+        hyperplanes defining the Kunz Polyhedra you are looking at. The face_desc
+        is a string containing 1's and 0's to tell KunzPoset which hyperplanes
+        should be used to build the KunzPoset.
+    '''
+    @staticmethod
+    def BuildFromNormaliz(face_desc, file_path='data.out'):
+        hyperplane_list = []
+
+        f = open(file_path, 'r')
+        lines = f.readlines()
+        f.close()
+        check = re.compile(r'^(\s(-|\s)\d)+$')
+
+        for line in lines:
+            if re.match(check, line) is not None:
+                ineq = list(map(int, line.split()))
+                hyperplane_list.append(ineq)
+
+        hyperplane_desc = []
+        for index, equality in enumerate(face_desc):
+            if(int(equality)):
+                hyperplane_desc.append(hyperplane_list[index])
+
+        multiplicity = len(hyperplane_desc[0]) + 1
+        return KunzPoset(m=multiplicity, hyperplane_desc=hyperplane_desc)
+
